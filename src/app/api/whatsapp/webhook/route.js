@@ -2,10 +2,10 @@ import { addMessage, updateMessageStatus } from "@/app/lib/conversation-store";
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
-  const mode = searchParams.get("hub.mode");
-  const token = searchParams.get("hub.verify_token");
-  const challenge = searchParams.get("hub.challenge");
-  const verifyToken = process.env.WHATSAPP_VERIFY_TOKEN;
+  const mode = getWebhookParam(searchParams, "hub.mode", "hub_mode");
+  const token = getWebhookParam(searchParams, "hub.verify_token", "hub_verify_token");
+  const challenge = getWebhookParam(searchParams, "hub.challenge", "hub_challenge");
+  const verifyToken = process.env.WHATSAPP_VERIFY_TOKEN?.trim();
 
   if (!mode && !token && !challenge) {
     return Response.json({
@@ -16,9 +16,26 @@ export async function GET(request) {
     });
   }
 
-  if (mode === "subscribe" && token && token === verifyToken) {
-    return new Response(challenge || "", { status: 200 });
+  if (!verifyToken) {
+    console.error("Missing WHATSAPP_VERIFY_TOKEN for webhook verification.");
+    return Response.json(
+      { error: "Webhook verify token is not configured on the server." },
+      { status: 500 },
+    );
   }
+
+  if (mode === "subscribe" && token?.trim() === verifyToken) {
+    return new Response(challenge || "", {
+      status: 200,
+      headers: { "Content-Type": "text/plain" },
+    });
+  }
+
+  console.warn("WhatsApp webhook verification failed", {
+    hasChallenge: Boolean(challenge),
+    mode,
+    tokenMatches: Boolean(token && token.trim() === verifyToken),
+  });
 
   return Response.json({ error: "Webhook verification failed." }, { status: 403 });
 }
@@ -82,4 +99,8 @@ function getMessageText(message) {
   }
 
   return "[message received]";
+}
+
+function getWebhookParam(searchParams, dottedName, underscoredName) {
+  return searchParams.get(dottedName) || searchParams.get(underscoredName);
 }
