@@ -6,7 +6,7 @@ export default function InstagramDashboard({ defaults }) {
   const [dashboard, setDashboard] = useState(null);
   const [status, setStatus] = useState("loading");
   const [error, setError] = useState("");
-  const [activeTab, setActiveTab] = useState("messages");
+  const [activeTab, setActiveTab] = useState("webhooks");
 
   useEffect(() => {
     loadDashboard();
@@ -40,6 +40,10 @@ export default function InstagramDashboard({ defaults }) {
     [dashboard?.conversations],
   );
   const posts = useMemo(() => dashboard?.posts || [], [dashboard?.posts]);
+  const webhookEvents = useMemo(
+    () => dashboard?.webhookEvents || [],
+    [dashboard?.webhookEvents],
+  );
   const recentComments = useMemo(
     () =>
       posts.flatMap((post) =>
@@ -79,11 +83,12 @@ export default function InstagramDashboard({ defaults }) {
         </div>
       </header>
 
-      <section className="mx-auto grid max-w-7xl gap-4 px-5 py-5 md:grid-cols-4">
+      <section className="mx-auto grid max-w-7xl gap-4 px-5 py-5 md:grid-cols-5">
         <Metric label="Conversations" value={dashboard?.totals?.conversations || 0} />
         <Metric label="Loaded messages" value={dashboard?.totals?.messages || 0} />
         <Metric label="Posts" value={dashboard?.totals?.posts || 0} />
         <Metric label="Loaded comments" value={dashboard?.totals?.comments || 0} />
+        <Metric label="Webhook events" value={webhookEvents.length} />
       </section>
 
       <section className="mx-auto max-w-7xl px-5 pb-8">
@@ -92,6 +97,9 @@ export default function InstagramDashboard({ defaults }) {
         <ApiErrors errors={dashboard?.errors} />
 
         <div className="mb-4 flex border-b border-[#26313d]">
+          <TabButton active={activeTab === "webhooks"} onClick={() => setActiveTab("webhooks")}>
+            Webhook Inbox
+          </TabButton>
           <TabButton active={activeTab === "messages"} onClick={() => setActiveTab("messages")}>
             DMs
           </TabButton>
@@ -103,6 +111,9 @@ export default function InstagramDashboard({ defaults }) {
           </TabButton>
         </div>
 
+        {activeTab === "webhooks" ? (
+          <WebhookEventList events={webhookEvents} />
+        ) : null}
         {activeTab === "messages" ? (
           <ConversationList conversations={conversations} />
         ) : null}
@@ -110,6 +121,115 @@ export default function InstagramDashboard({ defaults }) {
         {activeTab === "posts" ? <PostList posts={posts} /> : null}
       </section>
     </main>
+  );
+}
+
+function WebhookEventList({ events }) {
+  if (!events.length) {
+    return (
+      <EmptyState text="No webhook DM or comment received yet. Send an Instagram DM or comment after webhook subscription is active, then press Refresh." />
+    );
+  }
+
+  return (
+    <div className="grid gap-3">
+      {events.map((event) => (
+        <article
+          className="rounded-md border border-[#26313d] bg-[#151b22] p-4"
+          key={`${event.id}-${event.receivedAt}`}
+        >
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-full bg-[#20314a] px-3 py-1 text-xs font-semibold uppercase text-[#9db7ff]">
+                {event.type === "message" ? "DM" : "Comment"}
+              </span>
+              <ReplyStatus status={event.replyStatus} />
+            </div>
+            <span className="text-xs text-[#9aa7b4]">
+              {formatDate(event.receivedAt)}
+            </span>
+          </div>
+
+          <dl className="grid gap-3 text-sm md:grid-cols-2">
+            <div>
+              <dt className="text-xs font-semibold uppercase tracking-[0.14em] text-[#9aa7b4]">
+                From
+              </dt>
+              <dd className="mt-1 break-words text-[#eef2f5]">
+                {event.senderId || event.fromId || "Instagram user"}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs font-semibold uppercase tracking-[0.14em] text-[#9aa7b4]">
+                Event ID
+              </dt>
+              <dd className="mt-1 break-words text-[#eef2f5]">{event.id}</dd>
+            </div>
+          </dl>
+
+          <div className="mt-4 rounded-md bg-[#202a35] px-3 py-2">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#9aa7b4]">
+              Incoming
+            </p>
+            <p className="mt-1 break-words text-sm leading-6 text-[#eef2f5]">
+              {event.text || "[No text]"}
+            </p>
+          </div>
+
+          {event.replyMessage ? (
+            <div className="mt-3 rounded-md bg-[#13251f] px-3 py-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7ef0b2]">
+                  Auto reply
+                </p>
+                {event.replySource ? (
+                  <span className="rounded-full bg-[#1d3b32] px-2 py-1 text-[11px] font-semibold uppercase text-[#9cf7c4]">
+                    {event.replySource}
+                  </span>
+                ) : null}
+              </div>
+              <p className="mt-1 break-words text-sm leading-6 text-[#e7fff1]">
+                {event.replyMessage}
+              </p>
+              {event.replyModel ? (
+                <p className="mt-2 text-xs text-[#8fbaa5]">{event.replyModel}</p>
+              ) : null}
+            </div>
+          ) : null}
+
+          {event.aiError ? (
+            <p className="mt-3 rounded-md bg-[#3a3420] px-3 py-2 text-sm leading-6 text-[#ffe08a]">
+              AI fallback: {event.aiError}
+            </p>
+          ) : null}
+
+          {event.replyError ? (
+            <p className="mt-3 rounded-md bg-[#29171b] px-3 py-2 text-sm leading-6 text-[#ffb4ab]">
+              {event.replyError}
+            </p>
+          ) : null}
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function ReplyStatus({ status }) {
+  const styles = {
+    sent: "bg-[#123c2d] text-[#7ef0b2]",
+    failed: "bg-[#3a2024] text-[#ffb4ab]",
+    skipped: "bg-[#3a3420] text-[#ffe08a]",
+    ignored: "bg-[#202a35] text-[#c4d7ea]",
+  };
+
+  return (
+    <span
+      className={`rounded-full px-3 py-1 text-xs font-semibold ${
+        styles[status] || styles.ignored
+      }`}
+    >
+      Reply: {status || "pending"}
+    </span>
   );
 }
 

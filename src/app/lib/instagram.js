@@ -21,6 +21,11 @@ export function getInstagramConfig(overrides = {}) {
       process.env.INSTAGRAM_COMMENT_REPLY ||
       DEFAULT_COMMENT_REPLY,
     dmReply: overrides.dmReply || process.env.INSTAGRAM_DM_REPLY || DEFAULT_DM_REPLY,
+    publishAccountId:
+      overrides.publishAccountId ||
+      process.env.INSTAGRAM_PUBLISH_ACCOUNT_ID ||
+      process.env.INSTAGRAM_ACCOUNT_ID ||
+      "",
   };
 }
 
@@ -52,16 +57,24 @@ export function extractInstagramEvents(payload, accountId = "") {
     for (const messaging of messagingEvents) {
       const senderId = messaging.sender?.id;
       const text = messaging.message?.text;
+      const messageId = messaging.message?.mid;
 
-      if (!senderId || messaging.message?.is_echo || senderId === accountId) {
+      if (
+        !senderId ||
+        !messageId ||
+        !text ||
+        messaging.message?.is_echo ||
+        senderId === accountId
+      ) {
         continue;
       }
 
       events.push({
         type: "message",
-        id: messaging.message?.mid || `${entry.id}-${messaging.timestamp || Date.now()}`,
+        id: messageId,
         senderId,
-        text: text || `[${messaging.message?.attachments?.[0]?.type || "message"} received]`,
+        timestamp: messaging.timestamp || "",
+        text,
       });
     }
 
@@ -71,6 +84,7 @@ export function extractInstagramEvents(payload, accountId = "") {
       const value = change.value || {};
       const commentId = value.comment_id || value.id;
       const fromId = value.from?.id || value.user_id;
+      const parentId = value.parent_id || value.parent?.id || "";
 
       if (!commentId || fromId === accountId || isDeletedComment(value)) {
         continue;
@@ -82,6 +96,7 @@ export function extractInstagramEvents(payload, accountId = "") {
           id: commentId,
           commentId,
           fromId,
+          parentId,
           text: value.text || value.message || "[comment received]",
         });
       }
@@ -112,6 +127,53 @@ export async function sendInstagramMessage({ recipientId, message, config }) {
     recipient: { id: recipientId },
     message: { text: message },
   });
+}
+
+export async function publishInstagramImagePost({ imageUrl, caption, config }) {
+  const publishAccountId = config.publishAccountId || config.accountId;
+
+  if (!publishAccountId) {
+    return {
+      ok: false,
+      status: 400,
+      data: {},
+      error: "Missing Instagram publish account ID.",
+    };
+  }
+
+  const createContainer = await graphPostForm({
+    config,
+    host: "graph.facebook.com",
+    path: `${publishAccountId}/media`,
+    body: {
+      image_url: imageUrl,
+      caption,
+    },
+  });
+
+  const creationId = createContainer.data?.id;
+
+  if (!createContainer.ok || !creationId) {
+    return {
+      ...createContainer,
+      step: "create_container",
+    };
+  }
+
+  const publish = await graphPostForm({
+    config,
+    host: "graph.facebook.com",
+    path: `${publishAccountId}/media_publish`,
+    body: {
+      creation_id: creationId,
+    },
+  });
+
+  return {
+    ...publish,
+    step: publish.ok ? "published" : "publish",
+    creationId,
+  };
 }
 
 export function buildGraphUrl({ graphVersion, path, accessToken }) {
@@ -221,6 +283,20 @@ async function graphGet({ config, path, params = {} }) {
     data,
     error: data.error?.message || data.error?.error_user_msg || "",
   };
+}
+
+async function graphPostForm({
+  config,
+  path,
+  body = {},
+  host = "graph.instagram.com",
+}) {
+  const url = new URL(
+    `https://${host}/${config.graphVersion}/${String(path).replace(/^\/+/, "")}`,
+  );
+  url.searchParams.set("access_token", config.accessToken);
+
+  return postForm(url, body);
 }
 
 async function postForm(url, body) {
