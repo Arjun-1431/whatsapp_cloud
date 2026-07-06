@@ -26,22 +26,14 @@ export async function POST(request) {
   }
 
   const origin = getPublicOrigin(request);
+  const originError = validatePublicOrigin(origin);
 
-  if (!origin || /^https?:\/\/(localhost|127\.0\.0\.1)/i.test(origin)) {
+  if (originError) {
     return Response.json(
       {
-        error:
-          "Instagram needs a public HTTPS image URL. Open this page with your ngrok or deployed Vercel URL, then publish again.",
-      },
-      { status: 400 },
-    );
-  }
-
-  if (/\.ngrok-free\.app$/i.test(new URL(origin).hostname)) {
-    return Response.json(
-      {
-        error:
-          "Instagram cannot reliably fetch images from free ngrok warning pages. Deploy this app to Vercel or use an ngrok domain without the browser warning, then set INSTAGRAM_PUBLIC_BASE_URL to that public URL.",
+        error: originError,
+        code: "invalid_public_image_origin",
+        origin: origin || "",
       },
       { status: 400 },
     );
@@ -79,7 +71,7 @@ export async function POST(request) {
 
 function getPublicOrigin(request) {
   if (process.env.INSTAGRAM_PUBLIC_BASE_URL) {
-    return process.env.INSTAGRAM_PUBLIC_BASE_URL.replace(/\/+$/, "");
+    return process.env.INSTAGRAM_PUBLIC_BASE_URL.trim().replace(/\/+$/, "");
   }
 
   const forwardedProto = request.headers.get("x-forwarded-proto");
@@ -90,6 +82,34 @@ function getPublicOrigin(request) {
   }
 
   return new URL(request.url).origin;
+}
+
+function validatePublicOrigin(origin) {
+  if (!origin) {
+    return "Instagram needs a public HTTPS image URL. Set INSTAGRAM_PUBLIC_BASE_URL to your deployed HTTPS URL, then publish again.";
+  }
+
+  let url;
+
+  try {
+    url = new URL(origin);
+  } catch {
+    return "INSTAGRAM_PUBLIC_BASE_URL must be a valid public HTTPS URL.";
+  }
+
+  if (url.protocol !== "https:") {
+    return "Instagram needs a public HTTPS image URL. Use your deployed Vercel URL or another HTTPS domain, then publish again.";
+  }
+
+  if (/^(localhost|127\.0\.0\.1)$/i.test(url.hostname)) {
+    return "Instagram cannot fetch images from localhost. Open this page from your public HTTPS URL, then publish again.";
+  }
+
+  if (/\.ngrok-free\.app$/i.test(url.hostname)) {
+    return "Instagram cannot reliably fetch images from free ngrok warning pages. Deploy this app to Vercel or use an ngrok domain without the browser warning, then set INSTAGRAM_PUBLIC_BASE_URL to that public URL.";
+  }
+
+  return "";
 }
 
 function buildDefaultCaption(businessName) {

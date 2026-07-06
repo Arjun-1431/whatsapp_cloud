@@ -46,7 +46,7 @@ export default function InstagramPostCreator() {
       const data = await response.json().catch(() => ({}));
 
       if (!response.ok) {
-        throw new Error(data.error || "Post publish failed.");
+        throw new Error(formatPublishError(data));
       }
 
       setPublishedPostId(data.postId || "");
@@ -152,6 +152,7 @@ export default function InstagramPostCreator() {
               alt="Generated Instagram post preview"
               className="aspect-square w-full object-cover"
               height={1080}
+              loading="eager"
               src={previewUrl}
               unoptimized
               width={1080}
@@ -169,4 +170,18 @@ export default function InstagramPostCreator() {
       </form>
     </main>
   );
+}
+
+function formatPublishError(data) {
+  const parts = [data.error || "Post publish failed."];
+
+  if (data.origin) {
+    parts.push(`Configured URL: ${data.origin}`);
+  }
+
+  if (data.imageUrl) {
+    parts.push(`Image URL: ${data.imageUrl}`);
+  }
+
+  return parts.join("\n");
 }
