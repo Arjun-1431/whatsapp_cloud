@@ -1,16 +1,14 @@
-import WhatsAppConsole from "@/app/components/WhatsAppConsole";
-import { whatsappDefaults } from "@/app/lib/whatsapp";
+import InstagramDashboard from "@/app/components/InstagramDashboard";
+import { getInstagramConfig } from "@/app/lib/instagram";
 
 export default function Home() {
+  const instagramConfig = getInstagramConfig();
+
   return (
-    <WhatsAppConsole
+    <InstagramDashboard
       defaults={{
-        ...whatsappDefaults,
-        phoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID || whatsappDefaults.phoneNumberId,
-        recipientPhoneNumber:
-          process.env.WHATSAPP_RECIPIENT_PHONE_NUMBER ||
-          whatsappDefaults.recipientPhoneNumber,
-        hasServerToken: Boolean(process.env.WHATSAPP_ACCESS_TOKEN),
+        accountId: instagramConfig.accountId,
+        hasServerToken: Boolean(instagramConfig.accessToken),
       }}
     />
   );
